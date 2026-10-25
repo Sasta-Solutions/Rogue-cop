@@ -46,6 +46,7 @@ body{background:var(--ink);color:var(--fg);font-family:var(--mono);overflow:hidd
 #side{display:flex;flex-direction:column;gap:12px;padding:18px 18px 16px;min-height:0;overflow:auto;border-right:1px solid var(--line);background:linear-gradient(180deg,#0a0e16,#0c121c)}
 #side h2{margin:0;font-family:var(--display);font-weight:900;font-size:40px;letter-spacing:.04em;text-transform:uppercase;line-height:.95}
 #side .hd{display:flex;justify-content:space-between;align-items:baseline;gap:8px}
+#mCashRow{font-size:11px;letter-spacing:.14em;color:var(--dim);text-transform:uppercase}#mCash{color:var(--green);font-size:20px;letter-spacing:.04em;margin-left:6px}
 #mCount{font-size:11px;letter-spacing:.14em;color:var(--green);text-transform:uppercase}
 #mList{display:flex;flex-direction:column;gap:6px;overflow:auto;min-height:60px;flex:1 1 90px}
 .mrow{display:flex;gap:10px;align-items:center;text-align:left;background:rgba(255,255,255,.04);border:1px solid var(--line);color:var(--fg);padding:8px 10px;border-radius:3px;cursor:pointer;font-family:var(--mono)}
@@ -162,6 +163,7 @@ kbd{font-family:var(--mono);font-size:11px;color:var(--fg);border:1px solid var(
 <div id="board" hidden>
   <div id="side">
     <div class="hd"><h2>Chicago<br>Contracts</h2><span id="mCount">0 open</span></div>
+    <div id="mCashRow">Bank <b id="mCash">$0</b></div>
     <div id="mList"></div>
     <div id="mCard" hidden>
       <div><div id="mTitle"></div><div id="mSub"></div></div>
@@ -994,8 +996,9 @@ function endGame(mode,title,sub){
  $('screen').hidden=false;$('menuBox').hidden=true;$('settingsBox').hidden=true;$('endBox').hidden=false;
  $('endEye').textContent=mode==='won'?'Scene secure':'Mission failed';$('endTitle').textContent=title;
  const rescued=hostages.filter(h=>h.free).length,t=Math.floor(playTime),mm=String(Math.floor(t/60)).padStart(2,'0'),ss=String(t%60).padStart(2,'0');
+ const pay=payout(mode==='won');
  if(mode==='won'&&BD.cur){BD.list=BD.list.filter(m=>m.id!==BD.cur.id);if(BD.sel===BD.cur.id)BD.sel=null;}
- $('endStats').innerHTML=sub+'<br>Difficulty: '+DF.name+'<br>Hostages freed: '+rescued+' / '+hostages.length+'<br>Suspects down: '+killed+' / '+enemies.length+'<br>Time: '+mm+':'+ss;
+ $('endStats').innerHTML=sub+'<br>Difficulty: '+DF.name+'<br>Hostages freed: '+rescued+' / '+hostages.length+'<br>Suspects down: '+killed+' / '+enemies.length+'<br>Time: '+mm+':'+ss+(pay?'<br><br>Client: '+pay.client+'<br>'+(mode==='won'?'Contract: '+money(pay.base)+'<br>':'Contract failed — half bonus only<br>')+'Suspects ('+pay.nk+'): '+money(pay.kills)+'<br>Hostages saved ('+pay.ns+'): '+money(pay.saved)+'<br><b style="color:var(--green)">Earned: '+money(pay.total)+'</b> · Bank: '+money(CASH):'');
 }
 function startGame(){audio();reset();state='play';$('hud').hidden=false;$('screen').hidden=true;$('hint').hidden=false;$('hint').style.opacity=1;setTimeout(()=>{$('hint').style.opacity=0;},9000);
  updateTouch();if(touchOn())$('hint').hidden=true;}
@@ -1391,6 +1394,16 @@ function updateIntro(dt){
 const SPOTS=[['Rogers Park',380,46],['O’Hare',88,78],['Uptown',372,104],['Lakeview',352,152],['Lincoln Park',372,205],['Logan Square',262,160],['Wicker Park',300,208],['Austin',150,252],['Gold Coast',390,258],['River North',372,288],['The Loop',380,326],['West Loop',326,322],['Garfield Park',214,300],['Pilsen',305,376],['Chinatown',352,398],['Bronzeville',378,436],['Midway',214,436],['Back of the Yards',286,458],['Hyde Park',372,494],['South Shore',360,538]];
 const DCOL=[null,'#4fd08a','#a6d84a','#ffbf3c','#ff8a3c','#ff4a3c','#d4217a'];
 const BASEM={house:{en:6,ho:3,t:240,name:'Residential siege'},office:{en:30,ho:10,t:600,name:'Tower takeover'}};
+const CLIENTS=[{n:'Chicago PD',m:1},{n:'Illinois State Police',m:1.15},{n:'FBI',m:1.4},{n:'Foreign government',m:1.75},{n:'Private security firm',m:2.1}];
+const DPAY=[0,.6,.8,1,1.3,1.7,2.2],BPAY={house:3000,office:8000};
+let CASH=0;try{CASH=+localStorage.getItem('hotEntryCash')||0;}catch(e){}
+function money(n){return '$'+Math.round(n).toLocaleString('en-US');}
+function saveCash(){try{localStorage.setItem('hotEntryCash',String(CASH));}catch(e){}}
+function payFor(m,kills,saved,won){
+ const c=CLIENTS[m.client],k=DPAY[m.diff]*c.m,base=won?BPAY[m.type]*k:0,kp=kills*200*k,hp=saved*1200*k,f=won?1:.5;
+ return {client:c.n,base:Math.round(base),kills:Math.round(kp*f),saved:Math.round(hp*f),total:Math.round(base+(kp+hp)*f)};
+}
+function payout(won){const m=BD.cur;if(!m)return null;const rescued=hostages.filter(h=>h.free).length,p=payFor(m,killed,rescued,won);p.nk=killed;p.ns=rescued;CASH+=p.total;saveCash();return p;}
 const BD={list:[],sel:null,t:4.2,uid:0,open:false,built:false,fresh:{}};
 function mmss(s){return String(Math.floor(s/60)).padStart(2,'0')+':'+String(s%60).padStart(2,'0');}
 function boardMapSVG(){
@@ -1424,16 +1437,16 @@ function drawBoard(){
  if(!BD.built){$('mapSvg').innerHTML=boardMapSVG();BD.built=true;}
  $('pins').innerHTML=BD.list.map(pinSVG).join('');
  $('pins').querySelectorAll('.pin').forEach(el=>{const id=+el.dataset.id;el.addEventListener('click',()=>selectMission(id));el.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();selectMission(id);}});});
- $('mList').innerHTML=BD.list.slice().sort((a,b)=>b.diff-a.diff).map(m=>'<button type="button" class="mrow'+(BD.sel===m.id?' on':'')+'" data-id="'+m.id+'"><i style="background:'+DCOL[m.diff]+'"></i><span><b>'+SPOTS[m.spot][0]+'</b><em>'+BASEM[m.type].name+' · '+DIFFS[m.diff].name+'</em></span></button>').join('')||'<p class="dim">Waiting for dispatch…</p>';
+ $('mList').innerHTML=BD.list.slice().sort((a,b)=>b.diff-a.diff).map(m=>'<button type="button" class="mrow'+(BD.sel===m.id?' on':'')+'" data-id="'+m.id+'"><i style="background:'+DCOL[m.diff]+'"></i><span><b>'+SPOTS[m.spot][0]+'</b><em>'+BASEM[m.type].name+' · '+DIFFS[m.diff].name+' · '+CLIENTS[m.client].n+'</em></span></button>').join('')||'<p class="dim">Waiting for dispatch…</p>';
  $('mList').querySelectorAll('.mrow').forEach(b=>b.addEventListener('click',()=>selectMission(+b.dataset.id)));
- $('mCount').textContent=BD.list.length+' open';
+ $('mCount').textContent=BD.list.length+' open';$('mCash').textContent=money(CASH);
  const m=BD.list.find(x=>x.id===BD.sel);
  $('mCard').hidden=!m;
  if(m){const b=BASEM[m.type],D=DIFFS[m.diff],en=Math.min(48,Math.max(2,Math.round(b.en*D.en)));
   $('mTitle').textContent=SPOTS[m.spot][0];$('mSub').textContent=b.name;
   const bd=$('mBadge');bd.textContent=D.name;bd.style.background=DCOL[m.diff];bd.style.color=m.diff===6?'#fff':'#0b0f17';
   $('mPips').innerHTML=[1,2,3,4,5,6].map(i=>'<i style="background:'+(i<=m.diff?DCOL[m.diff]:'rgba(255,255,255,.14)')+'"></i>').join('');
-  $('mStats').innerHTML='<div><span>Suspects</span><b>'+en+'</b></div><div><span>Hostages</span><b>'+b.ho+'</b></div><div><span>Time</span><b>'+mmss(Math.round(b.t*D.time))+'</b></div><div><span>Enemy dmg</span><b>×'+D.dmg+'</b></div>';
+  $('mStats').innerHTML='<div><span>Suspects</span><b>'+en+'</b></div><div><span>Hostages</span><b>'+b.ho+'</b></div><div><span>Time</span><b>'+mmss(Math.round(b.t*D.time))+'</b></div><div><span>Enemy dmg</span><b>×'+D.dmg+'</b></div><div><span>Client</span><b style="font-size:14px">'+CLIENTS[m.client].n+'</b></div><div><span>Pay</span><b style="color:var(--green)">'+money(payFor(m,0,0,true).base)+'+</b></div>';
  }
 }
 function selectMission(id){BD.sel=id;delete BD.fresh[id];drawBoard();}
@@ -1441,7 +1454,7 @@ function addMission(){
  const used=new Set(BD.list.map(m=>m.spot)),free=SPOTS.map((_,i)=>i).filter(i=>!used.has(i));
  if(BD.list.length>=8){const k=BD.list.findIndex(m=>m.id!==BD.sel);if(k>=0)BD.list.splice(k,1);}
  const pool=free.length?free:SPOTS.map((_,i)=>i),w=[3,3,3,3,2,2];let diff=0,r=Math.random()*16;for(let i=0;i<6;i++){r-=w[i];if(r<=0){diff=i+1;break;}}
- const m={id:++BD.uid,spot:pool[(Math.random()*pool.length)|0],type:Math.random()<.5?'house':'office',diff:diff||3};
+ const m={id:++BD.uid,spot:pool[(Math.random()*pool.length)|0],type:Math.random()<.5?'house':'office',diff:diff||3,client:(Math.random()*CLIENTS.length)|0};
  BD.list.push(m);BD.fresh[m.id]=3;
  if(BD.sel==null)BD.sel=m.id;
  drawBoard();
