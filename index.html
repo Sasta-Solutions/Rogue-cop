@@ -222,19 +222,20 @@ scene.add(sun); scene.add(sun.target);
 /* ---------- level state (filled by loadLevel) ---------- */
 let W=30,H=24,grid=[],kind=[],doors={},doorInfo=[],furniture=[],L=null;
 let g=null,TS=32;
+let wins={},cover=new Set();
 let DF={en:1,dmg:1,vis:1,react:1,rate:1,time:1};
 const DIFFS=[null,{name:'Easy',en:.4,dmg:.5,vis:.75,react:1.8,rate:.7,time:1.5},{name:'Easy-Medium',en:.7,dmg:.75,vis:.88,react:1.3,rate:.85,time:1.25},{name:'Medium',en:1,dmg:1,vis:1,react:1,rate:1,time:1},{name:'Hard',en:1.3,dmg:1.2,vis:1.1,react:.8,rate:1.15,time:.9},{name:'Very Hard',en:1.6,dmg:1.4,vis:1.2,react:.6,rate:1.3,time:.8},{name:'Nightmare',en:2,dmg:1.7,vis:1.35,react:.4,rate:1.5,time:.7}];
-function tileSolid(tx,ty){if(tx<0||ty<0||tx>=W||ty>=H)return true;const v=grid[ty][tx];if(v===1||v===2||v===4)return true;if(v===3)return !doors[ty*W+tx].open;return false;}
-function losBlock(tx,ty){if(tx<0||ty<0||tx>=W||ty>=H)return true;const v=grid[ty][tx];return v===1||(v===3&&!doors[ty*W+tx].open);}
+function tileSolid(tx,ty){if(tx<0||ty<0||tx>=W||ty>=H)return true;const v=grid[ty][tx];if(v===1){const w=wins[ty*W+tx];return !(w&&w.broken);}if(v===2||v===4)return true;if(v===3)return !doors[ty*W+tx].open;return false;}
+function losBlock(tx,ty){if(tx<0||ty<0||tx>=W||ty>=H)return true;const v=grid[ty][tx];if(v===1)return !wins[ty*W+tx];return v===3&&!doors[ty*W+tx].open;}
 function collides(x,z,r){const x0=Math.floor(x-r),x1=Math.floor(x+r),z0=Math.floor(z-r),z1=Math.floor(z+r);
  for(let ty=z0;ty<=z1;ty++)for(let tx=x0;tx<=x1;tx++){if(tileSolid(tx,ty)){const cx=Math.max(tx,Math.min(x,tx+1)),cz=Math.max(ty,Math.min(z,ty+1));const dx=x-cx,dz=z-cz;if(dx*dx+dz*dz<r*r)return true;}}return false;}
-function moveEnt(e,dx,dz){if(!collides(e.x+dx,e.z,e.r))e.x+=dx;if(!collides(e.x,e.z+dz,e.r))e.z+=dz;}
+function moveEnt(e,dx,dz){const cw=wins[Math.floor(e.z)*W+Math.floor(e.x)];if(cw&&cw.broken){dx*=.5;dz*=.5;}if(!collides(e.x+dx,e.z,e.r))e.x+=dx;if(!collides(e.x,e.z+dz,e.r))e.z+=dz;}
 function los(x0,z0,x1,z1){const dx=x1-x0,dz=z1-z0,n=Math.ceil(Math.hypot(dx,dz)/0.12);for(let i=1;i<n;i++){const t=i/n;if(losBlock(Math.floor(x0+dx*t),Math.floor(z0+dz*t)))return false;}return true;}
 function castRay(x,z,a,range){const cx=Math.cos(a),cz=Math.sin(a);let d=0;while(d<range){const nd=d+0.1;if(losBlock(Math.floor(x+cx*nd),Math.floor(z+cz*nd)))return Math.min(range,d+0.2);d=nd;}return range;}
 function angDiff(a,b){let d=a-b;while(d>Math.PI)d-=2*Math.PI;while(d<-Math.PI)d+=2*Math.PI;return d;}
 function turnToward(cur,target,rate){const d=angDiff(target,cur);return cur+Math.sign(d)*Math.min(Math.abs(d),rate);}
 const DIRS=[[1,0],[-1,0],[0,1],[0,-1]];
-function passable(x,y){if(x<0||y<0||x>=W||y>=H)return false;const v=grid[y][x];return v===0||v===3;}
+function passable(x,y){if(x<0||y<0||x>=W||y>=H)return false;const v=grid[y][x];if(v===1){const w=wins[y*W+x];return !!(w&&w.broken);}return v===0||v===3;}
 function bfs(sx,sy,tx,ty){
  if(sx===tx&&sy===ty)return [{x:tx+.5,z:ty+.5}];
  const prev=new Int16Array(W*H).fill(-1),q=[sy*W+sx];prev[sy*W+sx]=sy*W+sx;let found=false;
@@ -656,8 +657,9 @@ function renderLevel(){
  floor.rotation.x=-Math.PI/2;floor.position.set(W/2,0,H/2);floor.receiveShadow=true;levelRoot.add(floor);
  // walls and hedges, instanced
  const byKind={},hedge=[];
+ wins={};L.windows.forEach(([x,z,ax])=>{const tx=Math.floor(x),ty=Math.floor(z);if(grid[ty]&&grid[ty][tx]===1&&kind[ty][tx]!==9&&WALLS[kind[ty][tx]])wins[ty*W+tx]={x:tx,y:ty,ax,broken:false,glass:null};});
  for(let y=0;y<H;y++)for(let x=0;x<W;x++){const v=grid[y][x];
-  if(v===1&&kind[y][x]!==9&&WALLS[kind[y][x]])(byKind[kind[y][x]]||(byKind[kind[y][x]]=[])).push([x+.5,y+.5]);
+  if(v===1&&kind[y][x]!==9&&WALLS[kind[y][x]]&&!wins[y*W+x])(byKind[kind[y][x]]||(byKind[kind[y][x]]=[])).push([x+.5,y+.5]);
   else if(v===2)hedge.push([x+.5,y+.5]);}
  for(const k in byKind){const [h,c,t]=WALLS[k];instAt(levelRoot,geo(1,h,1),c,byKind[k].map(p=>[p[0],p[1]]),h/2,0,true);instAt(levelRoot,geo(1,.05,1),t,byKind[k],h+.025,0,false);}
  instAt(levelRoot,geo(1,.9,1),0x2c5a30,hedge,.45,0,true);instAt(levelRoot,geo(1,.04,1),0x3d7a40,hedge,.92,0,false);
@@ -683,11 +685,19 @@ function renderLevel(){
   if(f.t==='cruiser'&&cruiser){gr.updateMatrixWorld(true);const p=new THREE.Vector3(-2.35,0,0).applyMatrix4(gr.matrixWorld);cruiser.tx=p.x;cruiser.tz=p.z;}
   if(f.t!=='cruiser')gr.traverse(o=>{o.matrixAutoUpdate=false;o.updateMatrix();});
  });
- // windows (both faces of each wall), instanced
- const fx=[],fz=[];
- L.windows.forEach(([x,z,ax])=>{for(const o of [-.53,.53]){if(ax)fx.push([x,z+o]);else fz.push([x+o,z]);}});
- instAt(levelRoot,geo(1,1,.05),0xf2efe6,fx,1.35,0,false);instAt(levelRoot,geo(.82,.82,.07),0x7fb4e6,fx,1.35,0x17304a,false);
- instAt(levelRoot,geo(.05,1,1),0xf2efe6,fz,1.35,0,false);instAt(levelRoot,geo(.07,.82,.82),0x7fb4e6,fz,1.35,0x17304a,false);
+ // real windows: sill + header + breakable glass
+ {const gm=new THREE.MeshLambertMaterial({color:0x9fd0ff,transparent:true,opacity:.34,emissive:0x17304a,depthWrite:false});
+  for(const k in wins){const w=wins[k],wk=WALLS[kind[w.y][w.x]],h=wk[0],gr=new THREE.Group();gr.position.set(w.x+.5,0,w.y+.5);
+   const sill=new THREE.Mesh(geo(1,.9,1),M(wk[1]));sill.position.y=.45;sill.castShadow=true;sill.receiveShadow=true;gr.add(sill);
+   const hd=new THREE.Mesh(geo(1,h-1.9,1),M(wk[1]));hd.position.y=1.9+(h-1.9)/2;hd.castShadow=true;gr.add(hd);
+   const cap=new THREE.Mesh(geo(1,.05,1),M(wk[2]));cap.position.y=h+.025;gr.add(cap);
+   const sl=new THREE.Mesh(geo(1,.06,1),M(wk[2]));sl.position.y=.93;gr.add(sl);
+   const glass=new THREE.Group();
+   const pane=new THREE.Mesh(w.ax?geo(1,1,.06):geo(.06,1,1),gm);pane.position.y=1.4;glass.add(pane);
+   const fr=M(0xf2efe6);
+   if(w.ax){for(const [a,b,c,d] of [[1,.05,.1,0],[.05,1,.1,0]]){const m=new THREE.Mesh(geo(a,b,c),fr);m.position.set(0,1.4,0);glass.add(m);}}
+   else{for(const [a,b,c] of [[.1,.05,1],[.1,1,.05]]){const m=new THREE.Mesh(geo(a,b,c),fr);m.position.set(0,1.4,0);glass.add(m);}}
+   gr.add(glass);w.glass=glass;levelRoot.add(gr);}}
  L.pictures.forEach(([x,y,z,ax,c])=>{const gr=new THREE.Group();if(ax){bx(gr,.9,.6,.05,0x3a2a1a,0,0,0);bx(gr,.76,.46,.06,c,0,0,0);}else{bx(gr,.05,.6,.9,0x3a2a1a,0,0,0);bx(gr,.06,.46,.76,c,0,0,0);}gr.position.set(x,y,z);levelRoot.add(gr);});
  // stair steps (visual only)
  L.stairs.forEach(s=>{for(const r of [s.a,s.b]){const up=(r===s.a);for(let i=0;i<4;i++){const st=new THREE.Mesh(geo(.42,.1*(up?i+1:4-i),r.h-.3),M(up?0x8a8f96:0x6a6f76));const hh=.1*(up?i+1:4-i);st.position.set(r.x+.3+i*.45+(s.ax<s.bx?0:0),hh/2,r.y+r.h/2);st.receiveShadow=true;levelRoot.add(st);}}});
@@ -817,10 +827,22 @@ function shoot(){
  for(const e of enemies){if(e.state==='dead'||e.state==='alert')continue;const rx=e.x-player.x,rz=e.z-player.z,al=rx*Math.cos(a)+rz*Math.sin(a),pp=Math.abs(-rx*Math.sin(a)+rz*Math.cos(a));if(al>0&&al<14&&pp<1.3&&los(player.x,player.z,e.x,e.z))goCombat(e,player.x,player.z);}
 }
 function startReload(){if(player.reload>0||player.ammo===player.mag)return;player.reload=1.25;noise(.04,.2,6000);makeNoise(player.x,player.z,4);}
+function nearWindow(){let best=null,bd=9;
+ for(const k in wins){const w=wins[k];if(w.broken)continue;const dx=w.x+.5-player.x,dz=w.y+.5-player.z,dist=Math.hypot(dx,dz);if(dist>1.5)continue;
+  if((dx*Math.cos(player.h)+dz*Math.sin(player.h))/Math.max(dist,.01)<.35)continue;if(dist<bd){bd=dist;best=w;}}
+ return best?{w:best,d:bd}:null;}
+function breakWindow(w,byPlayer,loud){
+ if(w.broken)return;w.broken=true;if(w.glass)w.glass.visible=false;
+ const cx=w.x+.5,cz=w.y+.5;for(let i=0;i<14;i++)spark(cx+(Math.random()-.5)*.8,cz+(Math.random()-.5)*.8,.8+Math.random()*1.1);
+ noise(.3,.35,5200);setTimeout(()=>noise(.22,.2,3000),70);
+ if(byPlayer)makeNoise(cx,cz,loud?19:15);
+}
 function kick(){
+ const nw=nearWindow();
  let best=null,bd=9;
  for(const k in doors){const d=doors[k];if(d.open)continue;const dx=d.x+.5-player.x,dz=d.y+.5-player.z,dist=Math.hypot(dx,dz);if(dist>1.5)continue;
   if((dx*Math.cos(player.h)+dz*Math.sin(player.h))/dist<.35)continue;if(dist<bd){bd=dist;best=d;}}
+ if(nw&&(!best||nw.d<bd)){breakWindow(nw.w,true,true);thump();shake=Math.max(shake,.4);toast('Window smashed','#ffbf3c');return;}
  if(!best)return;
  openDoor(best,player.x,player.z,true);thump();noise(.25,.3,700);shake=Math.max(shake,.4);ring(best.x+.5,best.y+.5);toast('Door kicked','#ffbf3c');
  for(const e of enemies){if(e.state==='dead')continue;const dd=Math.hypot(e.x-best.x-.5,e.z-best.y-.5);if(dd<1.8)e.stun=1.2;}
@@ -924,6 +946,7 @@ function updateBullets(dt){
   const b=bullets[i],steps=Math.ceil(b.sp*dt/.2),sx=Math.cos(b.a)*b.sp*dt/steps,sz=Math.sin(b.a)*b.sp*dt/steps;let dead=false;
   for(let s=0;s<steps&&!dead;s++){
    b.x+=sx;b.z+=sz;
+   {const tx=Math.floor(b.x),ty=Math.floor(b.z),w=wins[ty*W+tx];if(w&&!w.broken){breakWindow(w,b.owner==='p');dead=true;break;}if(cover.has(ty*W+tx)){dead=true;spark(b.x,b.z);break;}}
    if(losBlock(Math.floor(b.x),Math.floor(b.z))){dead=true;spark(b.x,b.z);break;}
    if(b.owner==='p'){
     for(const e of enemies)if(e.state!=='dead'&&(e.x-b.x)**2+(e.z-b.z)**2<.16){hitEnemy(e);dead=true;spark(b.x,b.z);break;}
@@ -960,8 +983,9 @@ function scaleEnemies(){
   L.enemyDefs=out;}
 }
 function loadLevel(id,diff){
- DF=DIFFS[diff||3];
+ DF=DIFFS[diff||3];wins={};
  L=LEVELS[id]();W=L.W;H=L.H;grid=L.grid;kind=L.kind;doorInfo=L.doorInfo;furniture=L.furniture;
+ cover=new Set();{const CV=['sedan','cruiser','fridge','wardrobe','bookshelf','cabinet','shelf','rack','vending','crate','monitorwall','reception','cooler','tree','copier','workbench','couch'];furniture.forEach(f=>{if(f.nc||CV.indexOf(f.t)<0)return;for(let y=f.y;y<f.y+f.h;y++)for(let x=f.x;x<f.x+f.w;x++)cover.add(y*W+x);});}
  L.timeLimit=Math.round(L.timeLimit*DF.time);scaleEnemies();
  renderLevel();spawnEntities();reset();
 }
@@ -1635,7 +1659,7 @@ function update(dt){
   $('hostages').textContent=hostages.filter(h=>h.free).length+' / '+hostages.length;
   $('hostiles').textContent=enemies.filter(e=>e.state!=='dead').length;
   $('stance').textContent=player.crouch?'Crouch':'Stand';
-  {const pr=$('prompt');let txt='',td=false;if(!tk){if(nearHostage())txt='Hold E · Cut ties (+30 HP)';else if(takedownTarget())td=true;else if(nearTrunk&&player.hp<100)txt=player.sp<1.2?'Healing from the med kit':'Stand still to heal';}pr.textContent=txt;pr.style.display=txt?'block':'none';$('tdBtn').style.display=td?'block':'none';}
+  {const pr=$('prompt');let txt='',td=false;if(!tk){if(nearHostage())txt='Hold E · Cut ties (+30 HP)';else if(takedownTarget())td=true;else if(nearWindow())txt='Kick to smash the window \u00b7 or shoot it';else if(nearTrunk&&player.hp<100)txt=player.sp<1.2?'Healing from the med kit':'Stand still to heal';}pr.textContent=txt;pr.style.display=txt?'block':'none';$('tdBtn').style.display=td?'block':'none';}
   $('clock').textContent=fmtT(timeLeft);$('rec').classList.toggle('low',timeLeft<60);
  }
  hostages.forEach(h=>{h.ring.position.set(h.x,.03,h.z);h.ring.scale.setScalar(1+Math.sin(time*4)*.08);h.mesh.rotation.y=-h.h;});
